@@ -9,6 +9,10 @@ int sMinZ = 10000;
 int h = 500;
 int fall = 0;
 
+enum CustomerDataKey {
+    FALL = 0x0,
+};
+
 int calculateS(int accelerometerValue);
 int decideFall(int s, int axis);
 static void fall_found();
@@ -16,6 +20,9 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void select_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void contact_android();
+//static void inbox_dropped_callback(AppMessageResult reason, void *context);
+//static void inbox_received_callback(DictionaryIterator *iter, void *context);
+
 
 static void data_handler(AccelData *data, uint32_t num_samples) {
   // Long lived buffer
@@ -119,11 +126,58 @@ void select_single_click_handler(ClickRecognizerRef recognizer, void *context) {
 void contact_android(){
   if(fall == 1){
     APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
+      DictionaryIterator *out_iter;
+
+    // Prepare the outbox buffer for this message
+    AppMessageResult result = app_message_outbox_begin(&out_iter);
+    if(result == APP_MSG_OK) {
+      Tuplet value = TupletCString(FALL,"FALL");
+      dict_write_tuplet(out_iter, &value);
+
+      // Send this message
+      result = app_message_outbox_send();
+      static char new_buffer[128];
+      snprintf(new_buffer, sizeof(new_buffer),"Message Sent");
+      text_layer_set_text(s_output_layer, new_buffer);
+      if(result != APP_MSG_OK) {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Error sending the outbox: %d", (int)result);
+      }
+    } else {
+      // The outbox cannot be used right now
+      APP_LOG(APP_LOG_LEVEL_ERROR, "Error preparing the outbox: %d", (int)result);
+    }
   }else{
     APP_LOG(APP_LOG_LEVEL_DEBUG, "########### FALL NOT YET DETECTED ##############");
   }
 }
 
+void outbox_sent_callback(DictionaryIterator *iter, void *context) {
+  // The message just sent has been successfully delivered
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Message SENT");
+  static char new_buffer[128];
+  snprintf(new_buffer, sizeof(new_buffer),"Phone RECEIVED message");
+  text_layer_set_text(s_output_layer, new_buffer);
+}
+
+void outbox_failed_callback(DictionaryIterator *iter,
+                                      AppMessageResult reason, void *context) {
+  // The message just sent failed to be delivered
+  APP_LOG(APP_LOG_LEVEL_ERROR, "Message send FAILED. Reason: %d", (int)reason);
+  static char new_buffer[128];
+  snprintf(new_buffer, sizeof(new_buffer),"Message FAILED to sent");
+  text_layer_set_text(s_output_layer, new_buffer);
+}
+
+static void setupAppMessage(void){
+    //app message callbacks registered
+  app_message_register_outbox_failed(outbox_failed_callback);
+  app_message_register_outbox_sent(outbox_sent_callback);
+  
+  const int inbound_size = 64;
+  const int outbound_size = 64;
+  
+  app_message_open(inbound_size, outbound_size);
+}
 
 static void main_window_load(Window *window) {
   Layer *window_layer = window_get_root_layer(window);
@@ -158,15 +212,15 @@ static void init() {
   accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
   window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
 
+  setupAppMessage();
 }
 
 static void deinit() {
   // Destroy main Window
   window_destroy(s_main_window);
 
-
   accel_data_service_unsubscribe();
-  
+  app_message_deregister_callbacks();
 }
 
 int main(void) {
