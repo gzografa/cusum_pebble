@@ -6,7 +6,7 @@ static TextLayer *s_output_layer;
 int sMinX = 10000;
 int sMinY = 10000;
 int sMinZ = 10000;
-int h = 500;
+int h = 1250;
 int fall = 0;
 
 enum CustomerDataKey {
@@ -58,9 +58,12 @@ static void data_handler(AccelData *data, uint32_t num_samples) {
 
 static void fall_found(){
   APP_LOG(APP_LOG_LEVEL_DEBUG, " FALL detected and into fall found function ");
+   accel_data_service_unsubscribe();
    static char new_buffer[128];
    snprintf(new_buffer, sizeof(new_buffer),"you have fallen, do you need help ?");
    text_layer_set_text(s_output_layer, new_buffer);
+   vibes_long_pulse();
+   accel_data_service_unsubscribe();
 }
 
 int calculateS(int accelerometerValue){
@@ -112,20 +115,28 @@ void config_provider(Window *window) {
 }
 
 void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  contact_android();
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "@@@@@ RESTART ACCELLEROMETER @@@@@");
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "@@@@@ smin and fall set to starting values @@@@@");
+  sMinX = 10000;
+  sMinY = 10000;
+  sMinZ = 10000;
+  fall =0;
+  int num_samples = 3;
+  accel_data_service_subscribe(num_samples, data_handler);
 }
 
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  contact_android();
+APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
+    contact_android();
 }
 
 void select_single_click_handler(ClickRecognizerRef recognizer, void *context) {
-  contact_android();
+APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
+    contact_android();
 }
 
 void contact_android(){
   if(fall == 1){
-    APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
       DictionaryIterator *out_iter;
 
     // Prepare the outbox buffer for this message
@@ -209,7 +220,7 @@ static void init() {
   accel_data_service_subscribe(num_samples, data_handler);
 
   // Choose update rate
-  accel_service_set_sampling_rate(ACCEL_SAMPLING_10HZ);
+  accel_service_set_sampling_rate(ACCEL_SAMPLING_50HZ);
   window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
 
   setupAppMessage();
