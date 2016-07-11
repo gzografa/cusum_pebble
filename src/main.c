@@ -3,10 +3,10 @@
 static Window *s_main_window;
 static TextLayer *s_output_layer;
 
-int sMinX = 10000;
-int sMinY = 10000;
-int sMinZ = 10000;
-int h = 1250;
+int sMinX = 1000;
+int sMinY = 1000;
+int sMinZ = 1000;
+int h = 1000;
 int fall = 0;
 
 enum CustomerDataKey {
@@ -15,6 +15,8 @@ enum CustomerDataKey {
 
 int calculateS(int accelerometerValue);
 int decideFall(int s, int axis);
+int getSminForAxis(int axis);
+void setSminForAxisIfNeeded(int s,int axis);
 static void fall_found();
 void down_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context);
@@ -24,46 +26,47 @@ void contact_android();
 //static void inbox_received_callback(DictionaryIterator *iter, void *context);
 
 
+
 static void data_handler(AccelData *data, uint32_t num_samples) {
   // Long lived buffer
   static char s_buffer[128];
   
-  int x = calculateS(data[0].x);
-  int y = calculateS(data[0].y);
-  int z = calculateS(data[0].z);
-  
-  int fallX = decideFall(x, 1); // axis == 1 for X 
-  int fallY = decideFall(y, 1); // axis == 1 for Y
-  int fallZ = decideFall(z, 1); // axis == 1 for Z 
-  
-  APP_LOG(APP_LOG_LEVEL_DEBUG, "x axis now %d == %d", data[0].x, x);
-  // Compose string of all data
   snprintf(s_buffer, sizeof(s_buffer), 
-    "N X,Y,Z\n0 %d,%d,%d\n1 %d,%d,%d\n2 %d,%d,%d,\n,%d", 
+    "N X,Y,Z\n0 %d,%d,%d\n1 %d,%d,%d\n2 %d,%d,%d,\n", 
     data[0].x, data[0].y, data[0].z, 
     data[1].x, data[1].y, data[1].z, 
-    data[2].x, data[2].y, data[2].z,x
+    data[2].x, data[2].y, data[2].z
   );
   text_layer_set_text(s_output_layer, s_buffer);
+  
+  int i;
+  
+  for (i = 0; i<3; i++){
+      int x = calculateS(data[i].x);
+      int y = calculateS(data[i].y);
+      int z = calculateS(data[i].z);
 
-  if(fallX ==1 || fallY ==1 || fallZ ==1 || fall ==1){
-    fall = 1;
-    accel_data_service_unsubscribe();
-    APP_LOG(APP_LOG_LEVEL_DEBUG, " FALL ");
-    snprintf(s_buffer, sizeof(s_buffer),"FALL");
-    text_layer_set_text(s_output_layer, s_buffer);
-    fall_found();
+      int fallX = decideFall(x, 1); // axis == 1 for X 
+      int fallY = decideFall(y, 2); // axis == 2 for Y
+      int fallZ = decideFall(z, 3); // axis == 3 for Z 
+
+      if(fallX ==1 || fallY ==1 || fallZ ==1 || fall ==1){
+        fall = 1;
+        accel_data_service_unsubscribe();
+        APP_LOG(APP_LOG_LEVEL_DEBUG, " FALL ");
+        fall_found();
+      }
   }
 }
 
+
+
 static void fall_found(){
   APP_LOG(APP_LOG_LEVEL_DEBUG, " FALL detected and into fall found function ");
-   accel_data_service_unsubscribe();
    static char new_buffer[128];
    snprintf(new_buffer, sizeof(new_buffer),"you have fallen, do you need help ?");
    text_layer_set_text(s_output_layer, new_buffer);
    vibes_long_pulse();
-   accel_data_service_unsubscribe();
 }
 
 int calculateS(int accelerometerValue){
@@ -76,35 +79,45 @@ int calculateS(int accelerometerValue){
   int first  = (theta0 - theta1) * 1000 / (sigma * sigma);
   int second = (accelerometerValue - (theta0 - theta1)/2);
   int s = first * second;
-//   APP_LOG(APP_LOG_LEVEL_DEBUG, " X %d into the decideFall function %d ",accelerometerValue,s);
   return s;
 }
 
-int decideFall(int s, int axis){
-  int decideFall = 0;   //starts for fall = 0, no fall.
+int getSminForAxis(int axis){
   int sMin = 0;
+  if( axis == 1){
+    sMin = sMinX;
+  }else if (axis == 2){ 
+    sMin = sMinY;
+  }else if ( axis == 3){
+    sMin = sMinZ;
+  }
+  return sMin;
+}
+
+void setSminForAxisIfNeeded(int s,int axis){
   if( axis == 1){
     if (s < sMinX){
       sMinX = s;
     }
-    sMin = sMinX;
   }else if (axis == 2){
     if (s < sMinY){
       sMinY = s;
     }    
-    sMin = sMinY;
   }else if ( axis == 3){
     if (s < sMinZ){
       sMinZ = s;
     }
-    sMin = sMinZ;
   }
-  APP_LOG(APP_LOG_LEVEL_DEBUG, " Smin ---> %d , S ---> %d ",sMin,s);
-  if(s/1000 - sMin/1000 > h){
-    decideFall = 1;
+}
+
+int decideFall(int s, int axis){
+  int sMin = getSminForAxis(axis);
+  setSminForAxisIfNeeded(s,axis);
+  if(s/1000 - sMin/1000 >= h){
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Fall detected in axis %d",axis);
+    return 1; //sends 1 if fall detected
   }
-  
-  return decideFall;
+  return 0;
 }
 
 void config_provider(Window *window) {
@@ -114,16 +127,26 @@ void config_provider(Window *window) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_single_click_handler);
 }
 
+void resetMinAndFall(){
+  sMinX = 1000;
+  sMinY = 1000;
+  sMinZ = 1000;
+  fall =0;
+}
+
 void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
   APP_LOG(APP_LOG_LEVEL_DEBUG, "@@@@@ RESTART ACCELLEROMETER @@@@@");
   APP_LOG(APP_LOG_LEVEL_DEBUG, "@@@@@ smin and fall set to starting values @@@@@");
-  sMinX = 10000;
-  sMinY = 10000;
-  sMinZ = 10000;
-  fall =0;
-  int num_samples = 3;
-  accel_data_service_subscribe(num_samples, data_handler);
+  if(fall == 1){
+    resetMinAndFall();
+    int num_samples = 3;
+    accel_data_service_subscribe(num_samples, data_handler);
+
+    // Choose update rate
+    accel_service_set_sampling_rate(ACCEL_SAMPLING_100HZ);
+  }
 }
+
 
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context) {
 APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
@@ -137,8 +160,7 @@ APP_LOG(APP_LOG_LEVEL_DEBUG, "*********** CONTACT ANDROID APP *************");
 
 void contact_android(){
   if(fall == 1){
-      DictionaryIterator *out_iter;
-
+    DictionaryIterator *out_iter;
     // Prepare the outbox buffer for this message
     AppMessageResult result = app_message_outbox_begin(&out_iter);
     if(result == APP_MSG_OK) {
@@ -207,6 +229,7 @@ static void main_window_unload(Window *window) {
   text_layer_destroy(s_output_layer);
 }
 
+
 static void init() {
   // Create main Window
   s_main_window = window_create();
@@ -216,11 +239,13 @@ static void init() {
   });
   window_stack_push(s_main_window, true);
   // Subscribe to the accelerometer data service
+  
   int num_samples = 3;
   accel_data_service_subscribe(num_samples, data_handler);
 
   // Choose update rate
-  accel_service_set_sampling_rate(ACCEL_SAMPLING_50HZ);
+  accel_service_set_sampling_rate(ACCEL_SAMPLING_100HZ);
+
   window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
 
   setupAppMessage();

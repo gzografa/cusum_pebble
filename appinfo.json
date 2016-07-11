@@ -4,13 +4,20 @@
         ""
     ],
     "companyName": "gzografa@gmail.com",
-    "longName": "cusum_c",
+    "longName": "Fall detection app",
     "projectType": "native",
     "resources": {
-        "media": []
+        "media": [
+            {
+                "file": "images/fall",
+                "menuIcon": true,
+                "name": "fall",
+                "type": "png"
+            }
+        ]
     },
     "sdkVersion": "2",
-    "shortName": "cusum_c",
+    "shortName": "No Fall",
     "uuid": "1c50db4a-8f61-48c2-8d1f-a03aaa134f96",
     "versionCode": 1,
     "versionLabel": "1.0",
