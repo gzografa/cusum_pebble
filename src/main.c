@@ -2,12 +2,17 @@
 
 static Window *s_main_window;
 static TextLayer *s_output_layer;
+static MenuLayer *menu_layer;
+static MenuLayer *menu_layer_h;
+static Layer *window_layer;
 
+int samplingRate = ACCEL_SAMPLING_10HZ;
 int sMinX = 1000;
 int sMinY = 1000;
 int sMinZ = 1000;
 int h = 1000;
 int fall = 0;
+int menuFlag = 0;
 
 enum CustomerDataKey {
     FALL = 0x0,
@@ -22,17 +27,26 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void up_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void select_single_click_handler(ClickRecognizerRef recognizer, void *context);
 void contact_android();
+void startCUSUM();
+void setSamplingRate();
+void setThreshold();
+void startMenu();
 //static void inbox_dropped_callback(AppMessageResult reason, void *context);
 //static void inbox_received_callback(DictionaryIterator *iter, void *context);
 
-
+static int16_t menu_get_header_height_callback(MenuLayer *menu_layer, uint16_t section_index, void *data) {
+//   return MENU_CELL_BASIC_HEADER_HEIGHT;
+    return 32;
+}
 
 static void data_handler(AccelData *data, uint32_t num_samples) {
+   APP_LOG(APP_LOG_LEVEL_DEBUG, " into data handler ");
   // Long lived buffer
   static char s_buffer[128];
   
   snprintf(s_buffer, sizeof(s_buffer), 
-    "N X,Y,Z\n0 %d,%d,%d\n1 %d,%d,%d\n2 %d,%d,%d,\n", 
+    "Hz %d , h %d \n N X,Y,Z\n0 %d,%d,%d\n1 %d,%d,%d\n2 %d,%d,%d,\n", 
+    samplingRate,h,
     data[0].x, data[0].y, data[0].z, 
     data[1].x, data[1].y, data[1].z, 
     data[2].x, data[2].y, data[2].z
@@ -143,7 +157,7 @@ void down_single_click_handler(ClickRecognizerRef recognizer, void *context) {
     accel_data_service_subscribe(num_samples, data_handler);
 
     // Choose update rate
-    accel_service_set_sampling_rate(ACCEL_SAMPLING_100HZ);
+    accel_service_set_sampling_rate(samplingRate);
   }
 }
 
@@ -212,21 +226,249 @@ static void setupAppMessage(void){
   app_message_open(inbound_size, outbound_size);
 }
 
-static void main_window_load(Window *window) {
-  Layer *window_layer = window_get_root_layer(window);
-  GRect window_bounds = layer_get_bounds(window_layer);
 
-  // Create output TextLayer
-  s_output_layer = text_layer_create(GRect(5, 0, window_bounds.size.w - 10, window_bounds.size.h));
+/* CODE FOR MENU */
+uint16_t num_rows_callback(MenuLayer *menu_layer, uint16_t section_index, void *callback_context){
+  if(menuFlag == 0){
+    return 2;
+  }else if(menuFlag == 1){
+    return 4;
+  }if(menuFlag == 2){
+    return 7;
+  }else{
+    return 2;
+  }
+}
+
+void draw_header_callback(GContext *ctx, const Layer *cell_layer, uint16_t section_index, void *callback_context){
+  if (menuFlag == 0){
+    switch (section_index) {
+      case 0:
+        // Draw title text in the section header
+        menu_cell_title_draw (ctx, cell_layer, "App options");
+        break;
+    }
+  }else if(menuFlag == 1){
+    switch (section_index) {
+      case 0:
+        // Draw title text in the section header
+        menu_cell_title_draw(ctx, cell_layer, "Sampling Rate");
+        break;
+    } 
+  }else if(menuFlag == 2){
+    switch (section_index) {
+      case 0:
+        // Draw title text in the section header
+        menu_cell_title_draw(ctx, cell_layer, "Threshold");
+        break;
+    } 
+  }
+}
+
+void draw_row_callback(GContext *ctx, Layer *cell_layer, MenuIndex *cell_index, void *callback_context){
+  if(menuFlag == 0){  //predifined or custom value
+      switch (cell_index->section) {
+        case 0:
+        switch(cell_index->row){
+        case 0:
+            menu_cell_basic_draw(ctx, cell_layer, "1.Start APP", "Predifined parameters", NULL);
+            break;
+        case 1:
+            menu_cell_basic_draw(ctx, cell_layer, "2.Custom CUSUM", "Define values", NULL);
+            break;
+        } 
+        break ;
+      }
+  }
+  if(menuFlag == 1){  //sampling rate menu
+    switch (cell_index->section) {
+      case 0:
+      switch(cell_index->row){
+        case 0:
+            menu_cell_basic_draw(ctx, cell_layer, "10 Hz", NULL, NULL);
+            break;
+        case 1:
+            menu_cell_basic_draw(ctx, cell_layer, "25 Hz", NULL, NULL);
+            break;
+        case 2:
+            menu_cell_basic_draw(ctx, cell_layer, "50 Hz", NULL, NULL);
+            break;
+        case 3:
+            menu_cell_basic_draw(ctx, cell_layer, "100 Hz", NULL, NULL);
+            break;
+      }
+      break ;
+    }
+  }
+  if(menuFlag == 2){  //thresshold menu
+    switch (cell_index->section) {
+      case 0:
+      switch(cell_index->row){
+        case 0:
+            menu_cell_basic_draw(ctx, cell_layer, "100", NULL, NULL);
+            break;
+        case 1:
+            menu_cell_basic_draw(ctx, cell_layer, "250", NULL, NULL);
+            break;
+        case 2:
+            menu_cell_basic_draw(ctx, cell_layer, "500", NULL, NULL);
+            break;
+        case 3:
+            menu_cell_basic_draw(ctx, cell_layer, "650", NULL, NULL);
+            break;
+        case 4:
+            menu_cell_basic_draw(ctx, cell_layer, "750", NULL, NULL);
+            break;
+        case 5:
+            menu_cell_basic_draw(ctx, cell_layer, "875", NULL, NULL);
+            break;
+        case 6:
+            menu_cell_basic_draw(ctx, cell_layer, "1000", NULL, NULL);
+            break;   
+      }
+      break ;
+    }
+  }
+}
+
+
+void select_click_callback(MenuLayer *menu_layer, MenuIndex *cell_index, void *callback_context)
+{  
+    int which = cell_index->row;
+    APP_LOG(APP_LOG_LEVEL_DEBUG, "Buuton pressedn in menu %d",which);
+  
+    if(menuFlag == 0){
+     if(which == 0){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Start CUSUM");
+        startCUSUM();
+      }else if (which == 1){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "Give alter values menu");
+        setSamplingRate();
+      }
+    }else if(menuFlag == 1){
+      if(which == 0){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "hz = 10 %d ", ACCEL_SAMPLING_10HZ );
+        samplingRate = ACCEL_SAMPLING_10HZ;
+      }else if (which == 1){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "hz = 25");
+        samplingRate = ACCEL_SAMPLING_25HZ ;
+      }else if (which == 2){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "hz = 50");
+        samplingRate = ACCEL_SAMPLING_50HZ ;
+      }else if (which == 3){
+        APP_LOG(APP_LOG_LEVEL_DEBUG, "hz = 100");
+        samplingRate = ACCEL_SAMPLING_100HZ ;
+      } 
+      setThreshold();
+    } else if(menuFlag == 2){
+      if(which == 0){
+        h = 100;
+      }else if (which == 1){
+        h = 250;
+      }else if (which == 2){
+        h = 500;
+      }else if (which == 3){
+        h = 650;
+      }else if (which == 4){
+        h = 750;
+      }else if (which == 5){
+        h = 850;
+      }else if (which == 6){
+        h = 1000;
+      } 
+       APP_LOG(APP_LOG_LEVEL_DEBUG, "h %d",h);
+       startCUSUM();
+    }
+    //Get which row
+
+    //The array that will hold the on/off vibration times
+
+}
+
+/* END of CODE FOR MENU */
+
+void startCUSUM(){
+   APP_LOG(APP_LOG_LEVEL_DEBUG, " accelerometer started? cusum started? ");
+  
   text_layer_set_font(s_output_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
   text_layer_set_text(s_output_layer, "No data yet.");
   text_layer_set_overflow_mode(s_output_layer, GTextOverflowModeWordWrap);
   layer_add_child(window_layer, text_layer_get_layer(s_output_layer));
+  
+//    menu_layer_destroy(menu_layer);
+  
+  int num_samples = 3;
+  accel_data_service_subscribe(num_samples, data_handler);
+
+  // Choose update rate
+  accel_service_set_sampling_rate(samplingRate);
+
+  window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
+
+  setupAppMessage();
+}
+
+void setSamplingRate(){
+  menuFlag = 1;
+  startMenu();
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Variables will be set");
+}
+
+void setThreshold(){
+  menuFlag = 2;
+  startMenu();
+  APP_LOG(APP_LOG_LEVEL_DEBUG, "Variables will be set");
+}
+
+void startMenu(){
+    MenuLayerCallbacks callbacks = {
+      .get_header_height = menu_get_header_height_callback,
+      .draw_header = (MenuLayerDrawHeaderCallback ) draw_header_callback,
+      .draw_row = (MenuLayerDrawRowCallback) draw_row_callback,
+      .get_num_rows = (MenuLayerGetNumberOfRowsInSectionsCallback) num_rows_callback,
+      .select_click = (MenuLayerSelectCallback) select_click_callback
+  };
+  menu_layer_set_callbacks(menu_layer, NULL, callbacks);
+}
+
+static void main_window_load(Window *window) {
+  window_layer = window_get_root_layer(window);
+  GRect window_bounds = layer_get_bounds(window_layer);
+
+//   s_output_layer = text_layer_create(GRect(5, 0, window_bounds.size.w - 10, window_bounds.size.h));
+  s_output_layer = text_layer_create(GRect(0, 0, 144, 168 - 16));
+//   text_layer_set_font(s_output_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24));
+//   text_layer_set_text(s_output_layer, "No data yet.");
+//   text_layer_set_overflow_mode(s_output_layer, GTextOverflowModeWordWrap);
+//   layer_add_child(window_layer, text_layer_get_layer(s_output_layer));
+  
+      //Create it - 12 is approx height of the top bar
+    menu_layer = menu_layer_create(GRect(0, 0, 144, 168 - 16));
+ 
+    //Let it receive clicks
+    menu_layer_set_click_config_onto_window(menu_layer, window);
+   
+    startMenu();
+    
+//     MenuLayerCallbacks callbacks = {
+//         .draw_row = (MenuLayerDrawRowCallback) draw_row_callback,
+//         .get_num_rows = (MenuLayerGetNumberOfRowsInSectionsCallback) num_rows_callback,
+//         .select_click = (MenuLayerSelectCallback) select_click_callback
+//     };
+//     menu_layer_set_callbacks(menu_layer, NULL, callbacks);
+ 
+    //Add to Window
+    layer_add_child(window_get_root_layer(window), menu_layer_get_layer(menu_layer));
+
 }
 
 static void main_window_unload(Window *window) {
   // Destroy output TextLayer
   text_layer_destroy(s_output_layer);
+  
+
+  menu_layer_destroy(menu_layer);
+
 }
 
 
@@ -240,23 +482,23 @@ static void init() {
   window_stack_push(s_main_window, true);
   // Subscribe to the accelerometer data service
   
-  int num_samples = 3;
-  accel_data_service_subscribe(num_samples, data_handler);
+//   int num_samples = 3;
+//   accel_data_service_subscribe(num_samples, data_handler);
 
-  // Choose update rate
-  accel_service_set_sampling_rate(ACCEL_SAMPLING_100HZ);
+//   // Choose update rate
+//   accel_service_set_sampling_rate(ACCEL_SAMPLING_100HZ);
 
-  window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
+//   window_set_click_config_provider(s_main_window, (ClickConfigProvider) config_provider);
 
-  setupAppMessage();
+//   setupAppMessage();
 }
 
 static void deinit() {
   // Destroy main Window
   window_destroy(s_main_window);
 
-  accel_data_service_unsubscribe();
-  app_message_deregister_callbacks();
+//   accel_data_service_unsubscribe();
+//   app_message_deregister_callbacks();
 }
 
 int main(void) {
